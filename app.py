@@ -1,6 +1,6 @@
 import streamlit as st
 from modules.data_loader import load_excel_data
-from modules.visualization import plot_price_distribution
+from modules.visualization import plot_monthly_avg_price, plot_price_distribution
 from modules.ui_components import select_year, show_dataframe
 
 # st.set_page_config(page_title="Análisis de Precios", layout="wide")
@@ -65,6 +65,9 @@ with tab_precios:
 
     st.title("Distribucion de precios")
     fig = plot_price_distribution(df_final)
+    st.pyplot(fig)
+
+    fig = plot_monthly_avg_price(df_final)
     st.pyplot(fig)
 
 # --- Pestaña: Consumos ---
