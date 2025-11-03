@@ -12,7 +12,11 @@ def load_excel_data(path: str) -> dict:
             usecols="A,C,D,E,F,G,H"
         )
         df = df.iloc[1:].reset_index(drop=True)
+        print(df.columns)
+        df.rename(columns={'Glp Cilindro 25Lbs.': 'Gas Licuado'}, inplace=True)
         resultados[nombre_hoja] = df
+
+    print(resultados)
 
     return resultados
 
@@ -29,4 +33,13 @@ def load_consumption_excel_data() -> dict:
 # Select just necesary columns
     gas_df = hoja_df[["Fecha", "Gas licuado de petróleo", "Año", "Mes"]]
     gas_df = gas_df.set_index('Fecha').sort_index()
+    
+    # dataframe of shape :
+    '''
+Gas licuado de petróleo   Año  Mes
+Fecha                                         
+2000-01-01            194410.476190  2000    1
+2000-02-01            174710.552381  2000    2
+2000-03-01            189234.066667  2000    3
+    '''
     return hoja_df

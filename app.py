@@ -56,7 +56,7 @@ available_years = list(price_data.keys())
 selected_year = st.sidebar.selectbox("📅 Año:", available_years)
 
 # Product selector
-products = ["Superior", "Regular", "Diésel", "Gas Licuado"]
+products = ["Superior", "Regular", "Diesel", "Gas Licuado"]
 selected_products = st.sidebar.multiselect(
     "⛽ Select Fuel Types:",
     products,
@@ -68,7 +68,7 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("Nivel de agregación")
 aggregation = st.sidebar.radio(
     "Escala de tiempo:",
-    ["Daily", "Weekly", "Monthly", "Yearly"]
+    ["Diario", "Semanal", "Mensual", "Anual"]
 )
 
 # Create tabs for different sections
@@ -196,7 +196,7 @@ with tab1:
 # TAB 2: MODEL PREDICTIONS
 # =============================================================================
 with tab2:
-    st.info("📌 This section displays predictions from multiple time series models")
+    st.markdown("Esta sección muestra predicciones de múltiples modelos de series temporales")
     
     # Model selector
     col1, col2, col3 = st.columns(3)
@@ -283,43 +283,17 @@ with tab2:
     
     st.plotly_chart(fig, use_container_width=True)
     
-    # Zoom into predictions only
-    st.subheader("🔍 Prediction Period Detail")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.date_input("Start Date", value=pd.to_datetime("2023-01-01"))
-    with col2:
-        st.date_input("End Date", value=pd.to_datetime("2024-12-31"))
-    
-    # Create zoomed prediction chart
-    fig_zoom = go.Figure()
-    
-    # Add predictions only (you'll populate this with real data)
-    
-    fig_zoom.update_layout(
-        title="Zoomed Prediction Comparison",
-        xaxis_title="Date",
-        yaxis_title="Consumption (barrels)",
-        hovermode='x unified',
-        template="plotly_dark",
-        height=400
-    )
-    
-    st.plotly_chart(fig_zoom, use_container_width=True)
-    
     # Prediction statistics
-    st.subheader("📊 Prediction Statistics")
+    st.subheader("Estadísticas de predicciones")
     
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.metric("Next Day Prediction", "567,234", "2.3%")
+        st.metric("Predicción del mañana", "567,234", "2.3%")
     with col2:
-        st.metric("7-Day Average", "565,120", "-0.5%")
+        st.metric("Promedio semanal", "565,120", "-0.5%")
     with col3:
-        st.metric("30-Day Trend", "↗️ Increasing", "")
+        st.metric("Tendencia mensual", "↗️ Increasing", "")
 
 # =============================================================================
 # TAB 3: MODEL COMPARISON
