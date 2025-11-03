@@ -5,7 +5,16 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 
 # Import your modules
-from modules.data_loader import load_excel_data
+from modules.data_loader import load_excel_data, load_consumption_excel_data
+
+# Color palette
+COLORS = {
+    'background': '#2a2e30',
+    'sidebar': '#345c72',
+    'accent': '#f46530',
+    'secondary_accent': '#ff9e7a',
+    'tertiary_accent': '#d4edf4'
+}
 
 st.set_page_config(
     page_title="Fuel Consumption & Price Dashboard",
@@ -14,18 +23,22 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS
-st.markdown("""
+# Custom CSS with color palette
+st.markdown(f"""
     <style>
-    .main {
+    .main {{
         padding: 0rem 1rem;
-    }
-    .stTabs [data-baseweb="tab-list"] {
+        background-color: {COLORS['background']};
+    }}
+    .stTabs [data-baseweb="tab-list"] {{
         gap: 2px;
-    }
-    .stTabs [data-baseweb="tab"] {
+    }}
+    .stTabs [data-baseweb="tab"] {{
         padding: 10px 20px;
-    }
+    }}
+    section[data-testid="stSidebar"] {{
+        background-color: {COLORS['sidebar']};
+    }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -36,43 +49,87 @@ st.title("⛽ Dashboard de Consumo y precios de combustibles")
 def load_data():
     # Load price data
     price_data = load_excel_data("./data/preciosLimpio.xlsx")
-    print(price_data)
     
     # Load consumption data
-    # consumption_data = pd.read_excel("./data/CONSUMO-HIDROCARBUROS-2024-12.xlsx", header=6)
+    consumption_data = load_consumption_excel_data()
     
-    return price_data
+    return price_data, consumption_data
 
 # Load the data
 try:
-    price_data = load_data()
-    # st.sidebar.success("✅ Data loaded successfully")
+    price_data, consumption_data = load_data()
 except Exception as e:
-    # st.sidebar.error(f"❌ Error loading data: {e}")
+    st.error(f"❌ Error cargando datos: {e}")
     st.stop()
 
-# Year selector in sidebar
-available_years = list(price_data.keys())
-selected_year = st.sidebar.selectbox("📅 Año:", available_years)
+# Sidebar configuration
+st.sidebar.header("⚙️ Configuración")
 
-# Product selector
-products = ["Superior", "Regular", "Diesel", "Gas Licuado"]
-selected_products = st.sidebar.multiselect(
-    "⛽ Select Fuel Types:",
-    products,
-    default=["Superior"]
+# Data type selector
+data_type = st.sidebar.radio(
+    "📊 Tipo de datos:",
+    ["Precios", "Consumo"]
 )
 
-# Date range selector
+if data_type == "Precios":
+    # Year selector for prices
+    available_years = list(price_data.keys())
+    selected_year = st.sidebar.selectbox("📅 Año:", available_years)
+    
+    # Product selector for prices
+    products = ["Superior", "Regular", "Diesel", "Gas Licuado"]
+    selected_products = st.sidebar.multiselect(
+        "⛽ Seleccionar combustibles:",
+        products,
+        default=["Superior"]
+    )
+else:
+    # Year selector for consumption
+    available_years = sorted(consumption_data['Año'].unique())
+    selected_year = st.sidebar.selectbox("📅 Año:", available_years)
+    
+    # Product selector for consumption (only Gas Licuado for now)
+    selected_products = ["Gas licuado de petróleo"]
+
+# Aggregation level
 st.sidebar.markdown("---")
-st.sidebar.subheader("Nivel de agregación")
+st.sidebar.subheader("📈 Nivel de agregación")
 aggregation = st.sidebar.radio(
     "Escala de tiempo:",
     ["Diario", "Semanal", "Mensual", "Anual"]
 )
 
+def aggregate_data(df, aggregation_level, value_columns):
+    """
+    Aggregate data based on selected time scale.
+    
+    Args:
+        df: DataFrame with datetime index
+        aggregation_level: "Diario", "Semanal", "Mensual", "Anual"
+        value_columns: List of columns to aggregate
+    
+    Returns:
+        Aggregated DataFrame
+    """
+    if aggregation_level == "Diario":
+        return df
+    
+    df_agg = df.copy()
+    
+    if aggregation_level == "Semanal":
+        # Resample to weekly, taking mean
+        df_agg = df_agg[value_columns].resample('W').mean()
+    elif aggregation_level == "Mensual":
+        # Resample to monthly, taking mean
+        df_agg = df_agg[value_columns].resample('M').mean()
+    elif aggregation_level == "Anual":
+        # Resample to yearly, taking mean
+        df_agg = df_agg[value_columns].resample('Y').mean()
+    
+    return df_agg
+
 # Create tabs for different sections
-tab1, tab2, tab3= st.tabs([
+tab1, tab2, tab3 = st.tabs([
     "Exploración de Datos",
     "Predicciones de modelos",
     "Comparación de modelos",
@@ -82,115 +139,252 @@ tab1, tab2, tab3= st.tabs([
 # TAB 1: DATA EXPLORATION
 # =============================================================================
 with tab1:
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        
+    if data_type == "Precios":
         # Get selected year data
-        df = price_data[selected_year]
+        df = price_data[selected_year].copy()
         
-        fig = go.Figure()
+        # Get columns that exist in the dataframe
+        available_products = [p for p in selected_products if p in df.columns]
         
-        for product in selected_products:
-            if product in df.columns:
-                fig.add_trace(go.Scatter(
-                    x=df.index,
-                    y=df[product],
-                    mode='lines',
+        if not available_products:
+            st.warning("⚠️ No hay datos disponibles para los productos seleccionados")
+        else:
+            # Aggregate data
+            df_agg = aggregate_data(df, aggregation, available_products)
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.subheader(f"📈 Precios de combustibles - {selected_year}")
+                
+                fig = go.Figure()
+                
+                for product in available_products:
+                    fig.add_trace(go.Scatter(
+                        x=df_agg.index,
+                        y=df_agg[product],
+                        mode='lines+markers' if aggregation != "Diario" else 'lines',
+                        name=product,
+                        line=dict(width=2),
+                        marker=dict(size=6 if aggregation != "Diario" else 4),
+                        hovertemplate='<b>%{fullData.name}</b><br>' +
+                                      'Fecha: %{x}<br>' +
+                                      'Precio: Q%{y:.2f}<br>' +
+                                      '<extra></extra>'
+                    ))
+                
+                fig.update_layout(
+                    xaxis_title="Fecha",
+                    yaxis_title="Precios (Q)",
+                    hovermode='x unified',
+                    template="plotly_dark",
+                    height=400,
+                    plot_bgcolor=COLORS['background'],
+                    paper_bgcolor=COLORS['background'],
+                    font=dict(color=COLORS['tertiary_accent'])
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+            
+            with col2:
+                st.subheader("📊 Distribución de precios")
+                
+                # Create histogram
+                fig = go.Figure()
+                
+                for product in available_products:
+                    fig.add_trace(go.Histogram(
+                        x=df[product].dropna(),
+                        name=product,
+                        opacity=0.7,
+                        nbinsx=30,
+                        marker=dict(
+                            line=dict(width=1, color='white')
+                        )
+                    ))
+                
+                fig.update_layout(
+                    xaxis_title="Precio (Q)",
+                    yaxis_title="Frecuencia",
+                    barmode='overlay',
+                    template="plotly_dark",
+                    height=400,
+                    plot_bgcolor=COLORS['background'],
+                    paper_bgcolor=COLORS['background'],
+                    font=dict(color=COLORS['tertiary_accent'])
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+            
+            # Full width chart - Monthly averages across all years
+            st.subheader("📅 Precios promedio mensuales (Todos los años)")
+            
+            # Combine all years data for monthly analysis
+            all_data = pd.DataFrame()
+            for year, df_year in price_data.items():
+                df_year_copy = df_year.copy()
+                df_year_copy['Year'] = year
+                all_data = pd.concat([all_data, df_year_copy], ignore_index=False)
+            
+            # Extract month
+            all_data['Month'] = all_data.index.month
+            
+            # Create grouped bar chart
+            fig = go.Figure()
+            
+            month_names = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 
+                           'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+            
+            for product in available_products:
+                monthly_avg = all_data.groupby('Month')[product].mean()
+                fig.add_trace(go.Bar(
+                    x=month_names,
+                    y=monthly_avg.values,
                     name=product,
+                    marker=dict(
+                        line=dict(width=1, color='white')
+                    ),
                     hovertemplate='<b>%{fullData.name}</b><br>' +
-                                  'Fecha: %{x}<br>' +
-                                  'Precio: Q%{y:.2f}<br>' +
+                                  'Mes: %{x}<br>' +
+                                  'Precio Promedio: Q%{y:.2f}<br>' +
                                   '<extra></extra>'
                 ))
-        
-        fig.update_layout(
-            title=f"Precios de combustibles - {selected_year}",
-            xaxis_title="Fecha",
-            yaxis_title="Precios (Q)",
-            hovermode='x unified',
-            template="plotly_dark",
-            height=400
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
+            
+            fig.update_layout(
+                xaxis_title="Mes",
+                yaxis_title="Precio Promedio (Q)",
+                barmode='group',
+                template="plotly_dark",
+                height=400,
+                plot_bgcolor=COLORS['background'],
+                paper_bgcolor=COLORS['background'],
+                font=dict(color=COLORS['tertiary_accent'])
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Raw data view with expand option
+            with st.expander("🔍 Ver datos sin procesar"):
+                st.dataframe(df_agg, use_container_width=True)
     
-    with col2:
+    else:  # Consumo
+        # Filter consumption data by selected year
+        df_consumption = consumption_data[consumption_data['Año'] == selected_year].copy()
         
-        # Create histogram
-        fig = go.Figure()
-        
-        for product in selected_products:
-            if product in df.columns:
-                fig.add_trace(go.Histogram(
-                    x=df[product].dropna(),
-                    name=product,
-                    opacity=0.7,
-                    nbinsx=30
+        if df_consumption.empty:
+            st.warning(f"⚠️ No hay datos de consumo disponibles para el año {selected_year}")
+        else:
+            # Aggregate consumption data
+            value_columns = ['Gas licuado de petróleo']
+            df_agg = aggregate_data(df_consumption, aggregation, value_columns)
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.subheader(f"📈 Consumo de combustible - {selected_year}")
+                
+                fig = go.Figure()
+                
+                fig.add_trace(go.Scatter(
+                    x=df_agg.index,
+                    y=df_agg['Gas licuado de petróleo'],
+                    mode='lines+markers' if aggregation != "Diario" else 'lines',
+                    name='Gas licuado de petróleo',
+                    line=dict(width=2, color=COLORS['accent']),
+                    marker=dict(size=6 if aggregation != "Diario" else 4, color=COLORS['accent']),
+                    hovertemplate='<b>Gas licuado de petróleo</b><br>' +
+                                  'Fecha: %{x}<br>' +
+                                  'Consumo: %{y:.2f} barriles<br>' +
+                                  '<extra></extra>'
                 ))
-        
-        fig.update_layout(
-            title="Distribución de precios",
-            xaxis_title="Precio (Q)",
-            yaxis_title="Frecuencia",
-            barmode='overlay',
-            template="plotly_dark",
-            height=400
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-    
-    # Full width charts
-    st.subheader("📅 Precios promedio")
-    
-    # Combine all years data for monthly analysis
-    all_data = pd.DataFrame()
-    for year, df_year in price_data.items():
-        df_year_copy = df_year.copy()
-        df_year_copy['Year'] = year
-        all_data = pd.concat([all_data, df_year_copy], ignore_index=True)
-    
-    # Extract month
-    if not pd.api.types.is_datetime64_any_dtype(all_data.index):
-        all_data['Date'] = pd.to_datetime(all_data.index, errors='coerce')
-    else:
-        all_data['Date'] = all_data.index
-    
-    all_data['Month'] = all_data['Date'].dt.month
-    
-    # Create grouped bar chart
-    fig = go.Figure()
-    
-    month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
-                   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-    
-    for product in selected_products:
-        if product in all_data.columns:
-            monthly_avg = all_data.groupby('Month')[product].mean()
+                
+                fig.update_layout(
+                    xaxis_title="Fecha",
+                    yaxis_title="Consumo (barriles)",
+                    hovermode='x unified',
+                    template="plotly_dark",
+                    height=400,
+                    plot_bgcolor=COLORS['background'],
+                    paper_bgcolor=COLORS['background'],
+                    font=dict(color=COLORS['tertiary_accent'])
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+            
+            with col2:
+                st.subheader("📊 Distribución de consumo")
+                
+                # Create histogram
+                fig = go.Figure()
+                
+                fig.add_trace(go.Histogram(
+                    x=df_consumption['Gas licuado de petróleo'].dropna(),
+                    name='Gas licuado de petróleo',
+                    opacity=0.7,
+                    nbinsx=30,
+                    marker=dict(
+                        color=COLORS['accent'],
+                        line=dict(width=1, color='white')
+                    )
+                ))
+                
+                fig.update_layout(
+                    xaxis_title="Consumo (barriles)",
+                    yaxis_title="Frecuencia",
+                    template="plotly_dark",
+                    height=400,
+                    plot_bgcolor=COLORS['background'],
+                    paper_bgcolor=COLORS['background'],
+                    font=dict(color=COLORS['tertiary_accent']),
+                    showlegend=False
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+            
+            # Full width chart - Monthly consumption across all years
+            st.subheader("📅 Consumo promedio mensual (Todos los años)")
+            
+            # Create grouped bar chart by month
+            all_consumption = consumption_data.copy()
+            
+            # Calculate monthly average
+            monthly_avg = all_consumption.groupby('Mes')['Gas licuado de petróleo'].mean()
+            
+            fig = go.Figure()
+            
+            month_names = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 
+                           'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+            
             fig.add_trace(go.Bar(
                 x=month_names,
                 y=monthly_avg.values,
-                name=product,
-                hovertemplate='<b>%{fullData.name}</b><br>' +
-                              'Month: %{x}<br>' +
-                              'Avg Price: Q%{y:.2f}<br>' +
+                name='Gas licuado de petróleo',
+                marker=dict(
+                    color=COLORS['accent'],
+                    line=dict(width=1, color='white')
+                ),
+                hovertemplate='<b>Gas licuado de petróleo</b><br>' +
+                              'Mes: %{x}<br>' +
+                              'Consumo Promedio: %{y:.2f} barriles<br>' +
                               '<extra></extra>'
             ))
-    
-    fig.update_layout(
-        title="Average Monthly Prices (All Years)",
-        xaxis_title="Month",
-        yaxis_title="Average Price (Q)",
-        barmode='group',
-        template="plotly_dark",
-        height=400
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Raw data view with expand option
-    with st.expander("🔍 View Raw Data"):
-        st.dataframe(df, use_container_width=True)
+            
+            fig.update_layout(
+                xaxis_title="Mes",
+                yaxis_title="Consumo Promedio (barriles)",
+                template="plotly_dark",
+                height=400,
+                plot_bgcolor=COLORS['background'],
+                paper_bgcolor=COLORS['background'],
+                font=dict(color=COLORS['tertiary_accent']),
+                showlegend=False
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Raw data view with expand option
+            with st.expander("🔍 Ver datos originales"):
+                st.dataframe(df_agg, use_container_width=True)
 
 # =============================================================================
 # TAB 2: MODEL PREDICTIONS
@@ -218,67 +412,45 @@ with tab2:
     
     # Fuel type selector for predictions
     fuel_type = st.selectbox(
-        "Select fuel type for predictions:",
+        "Seleccionar tipo de combustible para predicciones:",
         ["Gas Licuado", "Gasolina Superior"]
     )
     
     # Main prediction chart
-    st.subheader(f"📈 {fuel_type} - Consumption Predictions")
+    st.subheader(f"📈 {fuel_type} - Predicciones de consumo")
     
     # Placeholder for actual model data
-    # You'll replace this with your actual model predictions
     fig = go.Figure()
-    
-    # Example: Add actual consumption data (you'll load your real data here)
-    # dates = pd.date_range(start='2000-01-01', end='2024-12-31', freq='M')
-    # actual = np.random.randn(len(dates)).cumsum() + 300000
-    
-    # fig.add_trace(go.Scatter(
-    #     x=dates,
-    #     y=actual,
-    #     mode='lines',
-    #     name='Actual Consumption',
-    #     line=dict(color='white', width=2)
-    # ))
     
     # Add model predictions conditionally
     if show_lstm1:
-        # Add LSTM Model 1 predictions
-        # fig.add_trace(go.Scatter(
-        #     x=prediction_dates,
-        #     y=lstm1_predictions,
-        #     mode='lines',
-        #     name='LSTM Model 1',
-        #     line=dict(color='#00ff00', dash='dash')
-        # ))
         pass
     
     if show_lstm2:
-        # Add LSTM Model 2 predictions
         pass
     
     if show_prophet:
-        # Add Prophet predictions
         pass
     
     if show_holt:
-        # Add Holt-Winters predictions
         pass
     
     if show_sarima:
-        # Add SARIMA predictions
         pass
     
     # Placeholder plot
-    st.warning("🚧 Connect your model predictions here. See the commented code for structure.")
+    st.warning("🚧 Conecta las predicciones de tus modelos aquí. Ver el código comentado para la estructura.")
     
     fig.update_layout(
-        title=f"{fuel_type} Consumption - Historical & Predicted",
-        xaxis_title="Date",
-        yaxis_title="Consumption (barrels)",
+        title=f"{fuel_type} Consumo - Histórico y Predicciones",
+        xaxis_title="Fecha",
+        yaxis_title="Consumo (barriles)",
         hovermode='x unified',
         template="plotly_dark",
-        height=500
+        height=500,
+        plot_bgcolor=COLORS['background'],
+        paper_bgcolor=COLORS['background'],
+        font=dict(color=COLORS['tertiary_accent'])
     )
     
     st.plotly_chart(fig, use_container_width=True)
@@ -289,7 +461,7 @@ with tab2:
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.metric("Predicción del mañana", "567,234", "2.3%")
+        st.metric("Predicción de mañana", "567,234", "2.3%")
     with col2:
         st.metric("Promedio semanal", "565,120", "-0.5%")
     with col3:
@@ -304,7 +476,7 @@ Compare diferentes modelos predictivos basándose en métricas de evaluación es
 Los valores más bajos indican un mejor rendimiento en las métricas de error (MAE, MSE, RMSE, AIC, BIC).
     """)
     
-    # Model metrics (you'll populate this with your actual metrics)
+    # Model metrics
     metrics_gas_licuado = {
         'Model': ['LSTM 1', 'LSTM 2 (Tuned)', 'Holt-Winters', 'Prophet', 'SARIMA'],
         'MAE': [30240.46, 32097.82, 24936.78, 19578.26, None],
@@ -359,7 +531,7 @@ Los valores más bajos indican un mejor rendimiento en las métricas de error (M
         y=metric_data[metric_to_plot],
         text=metric_data[metric_to_plot].round(2),
         textposition='auto',
-        marker_color='#f46530'
+        marker_color=COLORS['accent']
     ))
     
     fig.update_layout(
@@ -367,7 +539,10 @@ Los valores más bajos indican un mejor rendimiento en las métricas de error (M
         xaxis_title="Modelo",
         yaxis_title=metric_to_plot,
         template="plotly_dark",
-        height=400
+        height=400,
+        plot_bgcolor=COLORS['background'],
+        paper_bgcolor=COLORS['background'],
+        font=dict(color=COLORS['tertiary_accent'])
     )
     
     st.plotly_chart(fig, use_container_width=True)
@@ -388,12 +563,15 @@ Los valores más bajos indican un mejor rendimiento en las métricas de error (M
     
     fig = go.Figure()
     
+    colors_list = [COLORS['accent'], COLORS['secondary_accent'], COLORS['tertiary_accent'], '#72a0c1', '#a8dadc']
+    
     for idx, row in df_normalized.iterrows():
         fig.add_trace(go.Scatterpolar(
             r=[row['MAE'], row['RMSE'], row['AIC'], row['BIC']],
             theta=['MAE', 'RMSE', 'AIC', 'BIC'],
             fill='toself',
-            name=row['Model']
+            name=row['Model'],
+            line=dict(color=colors_list[idx % len(colors_list)])
         ))
     
     fig.update_layout(
@@ -401,12 +579,16 @@ Los valores más bajos indican un mejor rendimiento en las métricas de error (M
             radialaxis=dict(
                 visible=True,
                 range=[0, 1]
-            )
+            ),
+            bgcolor=COLORS['background']
         ),
         showlegend=True,
         template="plotly_dark",
         height=500,
-        title="Comparación de rendimiento (Más a los extremos es mejor)"
+        title="Comparación de rendimiento (Más a los extremos es mejor)",
+        plot_bgcolor=COLORS['background'],
+        paper_bgcolor=COLORS['background'],
+        font=dict(color=COLORS['tertiary_accent'])
     )
     
     st.plotly_chart(fig, use_container_width=True)
