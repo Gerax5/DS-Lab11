@@ -7,6 +7,8 @@ streamlit run app.py
 
 # Resultados
 
+Video de demostracion: [Video](https://youtu.be/YtrxQjrhrUk)
+
 ![Image](./data/img/r1.png)
 ![Image](./data/img/r2.png)
 ![Image](./data/img/r3.png)
