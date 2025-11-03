@@ -85,7 +85,7 @@ if data_type == "Precios":
     )
 else:
     # Year selector for consumption
-    available_years = sorted(consumption_data['Año'].unique())
+    available_years = sorted(consumption_data['Año'].unique().tolist())
     selected_year = st.sidebar.selectbox("📅 Año:", available_years)
     
     # Product selector for consumption (only Gas Licuado for now)
@@ -383,7 +383,7 @@ with tab1:
             st.plotly_chart(fig, use_container_width=True)
             
             # Raw data view with expand option
-            with st.expander("🔍 Ver datos originales"):
+            with st.expander("🔍 Ver datos sin procesar"):
                 st.dataframe(df_agg, use_container_width=True)
 
 # =============================================================================
