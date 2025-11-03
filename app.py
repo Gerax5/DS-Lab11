@@ -6,6 +6,7 @@ from plotly.subplots import make_subplots
 
 # Import your modules
 from modules.data_loader import load_excel_data, load_consumption_excel_data
+from modules.model_predictor import load_and_predict
 
 # Color palette
 COLORS = {
@@ -55,12 +56,28 @@ def load_data():
     
     return price_data, consumption_data
 
+@st.cache_resource
+def load_models_and_predictions():
+    """Load models and generate predictions (cached)"""
+    try:
+        predictor, predictions, statistics, metrics = load_and_predict(
+            models_dir='./models',
+            prediction_months=30
+        )
+        return predictor, predictions, statistics, metrics
+    except Exception as e:
+        st.sidebar.warning(f"⚠️ No se pudieron cargar los modelos: {e}")
+        return None, None, None, None
+
 # Load the data
 try:
     price_data, consumption_data = load_data()
 except Exception as e:
     st.error(f"❌ Error cargando datos: {e}")
     st.stop()
+
+# Load models and predictions
+predictor, predictions, pred_statistics, model_metrics = load_models_and_predictions()
 
 # Sidebar configuration
 st.sidebar.header("⚙️ Configuración")
@@ -390,82 +407,210 @@ with tab1:
 # TAB 2: MODEL PREDICTIONS
 # =============================================================================
 with tab2:
-    st.markdown("Esta sección muestra predicciones de múltiples modelos de series temporales")
+    st.markdown("Esta sección muestra predicciones de modelos LSTM para **Gasolina Superior**")
     
-    # Model selector
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        show_lstm1 = st.checkbox("LSTM Model 1", value=True)
-    with col2:
-        show_lstm2 = st.checkbox("LSTM Model 2 (Tuned)", value=True)
-    with col3:
-        show_prophet = st.checkbox("Prophet Model", value=False)
-    
-    col4, col5 = st.columns(2)
-    with col4:
-        show_holt = st.checkbox("Holt-Winters Model", value=False)
-    with col5:
-        show_sarima = st.checkbox("SARIMA Model", value=False)
-    
-    st.markdown("---")
-    
-    # Fuel type selector for predictions
-    fuel_type = st.selectbox(
-        "Seleccionar tipo de combustible para predicciones:",
-        ["Gas Licuado", "Gasolina Superior"]
-    )
-    
-    # Main prediction chart
-    st.subheader(f"📈 {fuel_type} - Predicciones de consumo")
-    
-    # Placeholder for actual model data
-    fig = go.Figure()
-    
-    # Add model predictions conditionally
-    if show_lstm1:
-        pass
-    
-    if show_lstm2:
-        pass
-    
-    if show_prophet:
-        pass
-    
-    if show_holt:
-        pass
-    
-    if show_sarima:
-        pass
-    
-    # Placeholder plot
-    st.warning("🚧 Conecta las predicciones de tus modelos aquí. Ver el código comentado para la estructura.")
-    
-    fig.update_layout(
-        title=f"{fuel_type} Consumo - Histórico y Predicciones",
-        xaxis_title="Fecha",
-        yaxis_title="Consumo (barriles)",
-        hovermode='x unified',
-        template="plotly_dark",
-        height=500,
-        plot_bgcolor=COLORS['background'],
-        paper_bgcolor=COLORS['background'],
-        font=dict(color=COLORS['tertiary_accent'])
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Prediction statistics
-    st.subheader("Estadísticas de predicciones")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("Predicción de mañana", "567,234", "2.3%")
-    with col2:
-        st.metric("Promedio semanal", "565,120", "-0.5%")
-    with col3:
-        st.metric("Tendencia mensual", "↗️ Increasing", "")
+    if predictor is None or predictions is None:
+        st.error("❌ Los modelos no están disponibles. Por favor, exporta los modelos desde tu Jupyter notebook primero.")
+        st.info("""
+        **Para exportar los modelos desde tu Jupyter notebook:**
+        1. Después de entrenar ambos modelos (modelo1 y modelo2)
+        2. Ejecuta el código en `export_models_notebook.py` en tu notebook
+        3. Los modelos se guardarán en `./models/`
+        4. Recarga esta página
+        """)
+    else:
+        # Model selector
+        st.subheader("🎯 Seleccionar modelos a visualizar")
+        col1, col2 = st.columns(2)
+        
+        available_models = list(predictions.keys())
+        
+        with col1:
+            show_lstm1 = st.checkbox(
+                "LSTM Model 1", 
+                value="LSTM Model 1" in available_models,
+                disabled="LSTM Model 1" not in available_models
+            )
+        with col2:
+            show_lstm2 = st.checkbox(
+                "LSTM Model 2 (Tuned)", 
+                value="LSTM Model 2 (Tuned)" in available_models,
+                disabled="LSTM Model 2 (Tuned)" not in available_models
+            )
+        
+        st.markdown("---")
+        
+        # Get historical data
+        historical_data = predictor.get_historical_data()
+        
+        # Main prediction chart
+        st.subheader("📈 Gasolina Superior - Consumo Histórico y Predicciones")
+        
+        fig = go.Figure()
+        
+        # Add historical data
+        fig.add_trace(go.Scatter(
+            x=historical_data.index,
+            y=historical_data['super'],
+            mode='lines',
+            name='Datos Históricos',
+            line=dict(color=COLORS['tertiary_accent'], width=2),
+            hovertemplate='<b>Histórico</b><br>' +
+                          'Fecha: %{x}<br>' +
+                          'Consumo: %{y:,.0f} barriles<br>' +
+                          '<extra></extra>'
+        ))
+        
+        # Model colors
+        model_colors = {
+            'LSTM Model 1': COLORS['accent'],
+            'LSTM Model 2 (Tuned)': COLORS['secondary_accent']
+        }
+        
+        # Add LSTM Model 1 predictions
+        if show_lstm1 and 'LSTM Model 1' in predictions:
+            pred = predictions['LSTM Model 1']
+            fig.add_trace(go.Scatter(
+                x=pred.index,
+                y=pred.values,
+                mode='lines+markers',
+                name='LSTM Model 1',
+                line=dict(color=model_colors['LSTM Model 1'], width=2, dash='dash'),
+                marker=dict(size=6),
+                hovertemplate='<b>LSTM Model 1</b><br>' +
+                              'Fecha: %{x}<br>' +
+                              'Predicción: %{y:,.0f} barriles<br>' +
+                              '<extra></extra>'
+            ))
+        
+        # Add LSTM Model 2 predictions
+        if show_lstm2 and 'LSTM Model 2 (Tuned)' in predictions:
+            pred = predictions['LSTM Model 2 (Tuned)']
+            fig.add_trace(go.Scatter(
+                x=pred.index,
+                y=pred.values,
+                mode='lines+markers',
+                name='LSTM Model 2 (Tuned)',
+                line=dict(color=model_colors['LSTM Model 2 (Tuned)'], width=2, dash='dash'),
+                marker=dict(size=6),
+                hovertemplate='<b>LSTM Model 2 (Tuned)</b><br>' +
+                              'Fecha: %{x}<br>' +
+                              'Predicción: %{y:,.0f} barriles<br>' +
+                              '<extra></extra>'
+            ))
+        
+        # Add vertical line to separate historical from predictions
+        last_date = historical_data.index[-1]
+        
+        fig.add_shape(
+            type="line",
+            x0=last_date,
+            x1=last_date,
+            y0=0,
+            y1=1,
+            yref="paper",
+            line=dict(
+                color="white",
+                width=2,
+                dash="dot"
+            )
+        )
+        
+        # Add annotation
+        fig.add_annotation(
+            x=last_date,
+            y=1,
+            yref="paper",
+            text="Inicio de predicciones",
+            showarrow=False,
+            yshift=10,
+            font=dict(color="white", size=12)
+        )
+        
+        fig.update_layout(
+            xaxis_title="Fecha",
+            yaxis_title="Consumo (barriles)",
+            hovermode='x unified',
+            template="plotly_dark",
+            height=500,
+            plot_bgcolor=COLORS['background'],
+            paper_bgcolor=COLORS['background'],
+            font=dict(color=COLORS['tertiary_accent']),
+            legend=dict(
+                yanchor="top",
+                y=0.99,
+                xanchor="left",
+                x=0.01
+            )
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Prediction statistics
+        st.subheader("📊 Estadísticas de predicciones")
+        
+        if pred_statistics and 'Average' in pred_statistics:
+            avg_stats = pred_statistics['Average']
+            
+            # Calculate percentage changes
+            last_historical = historical_data['super'].iloc[-1]
+            next_month_change = ((avg_stats['next_month'] - last_historical) / last_historical) * 100
+            next_4_months_change = ((avg_stats['next_4_months_avg'] - last_historical) / last_historical) * 100
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric(
+                    "Predicción próximo mes",
+                    f"{avg_stats['next_month']:,.0f} barriles",
+                    f"{next_month_change:+.2f}%"
+                )
+            
+            with col2:
+                st.metric(
+                    "Promedio próximos 4 meses",
+                    f"{avg_stats['next_4_months_avg']:,.0f} barriles",
+                    f"{next_4_months_change:+.2f}%"
+                )
+            
+            with col3:
+                st.metric(
+                    "Tendencia",
+                    avg_stats['trend'],
+                    f"{avg_stats['trend_pct']:+.2f}%"
+                )
+        else:
+            st.warning("⚠️ No hay estadísticas disponibles")
+        
+        # Detailed model statistics
+        with st.expander("📈 Ver estadísticas detalladas por modelo"):
+            if pred_statistics:
+                for model_name, stats in pred_statistics.items():
+                    if model_name != 'Average':
+                        st.markdown(f"**{model_name}**")
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.write(f"Próximo mes: {stats['next_month']:,.0f} barriles")
+                        with col2:
+                            st.write(f"Promedio 4 meses: {stats['next_4_months_avg']:,.0f} barriles")
+                        with col3:
+                            st.write(f"Tendencia: {stats['trend']} ({stats['trend_pct']:+.2f}%)")
+                        st.markdown("---")
+            else:
+                st.write("No hay estadísticas disponibles")
+        
+        # Predictions table
+        with st.expander("📋 Ver tabla de predicciones"):
+            # Combine all predictions into a dataframe
+            pred_df = pd.DataFrame()
+            for model_name, pred in predictions.items():
+                pred_df[model_name] = pred
+            
+            # Format the dataframe
+            pred_df.index = pred_df.index.strftime('%Y-%m-%d')
+            pred_df = pred_df.round(0)
+            
+            st.dataframe(pred_df, use_container_width=True)
 
 # =============================================================================
 # TAB 3: MODEL COMPARISON
