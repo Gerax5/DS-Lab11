@@ -7,6 +7,8 @@ streamlit run app.py
 
 # Resultados
 
+#### DISCLAIMER: Si no se quiere correr el código fuente, se recomienda ver el video
+
 Video de demostracion: [Video](https://youtu.be/YtrxQjrhrUk)
 
 ![Image](./data/img/r1.png)
