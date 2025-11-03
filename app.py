@@ -520,7 +520,54 @@ Los valores más bajos indican un mejor rendimiento en las métricas de error (M
         "Métrica a comparar:",
         ["MAE", "RMSE", "AIC", "BIC"]
     )
-    
+
+    st.subheader("📑 Tabla comparativa (según métrica seleccionada)")
+
+    comp_table = (
+        df_metrics[['Model', metric_to_plot]]
+        .dropna()
+        .sort_values(by=metric_to_plot, ascending=True)
+        .reset_index(drop=True)
+        .rename(columns={metric_to_plot: f'{metric_to_plot}'})
+    )
+
+    comp_table.insert(0, 'Rank', comp_table.index + 1)
+
+    m_min = comp_table[f'{metric_to_plot}'].min()
+    m_max = comp_table[f'{metric_to_plot}'].max()
+    if m_max != m_min:
+        comp_table['Score (0-100)'] = ((m_max - comp_table[f'{metric_to_plot}']) / (m_max - m_min) * 100).round(2)
+    else:
+        comp_table['Score (0-100)'] = 100.0
+
+    best_val = comp_table[f'{metric_to_plot}'].iloc[0]
+    worst_val = comp_table[f'{metric_to_plot}'].iloc[-1]
+
+    comp_table['Δ vs mejor (%)'] = ((comp_table[f'{metric_to_plot}'] / best_val - 1) * 100).round(2)
+    comp_table['Δ vs peor (%)']  = ((comp_table[f'{metric_to_plot}'] / worst_val - 1) * 100).round(2)
+
+    comp_table['Etiqueta'] = ['Mejor'] + [''] * (len(comp_table) - 1)
+
+    top_n = st.slider("Mostrar top N", min_value=1, max_value=len(comp_table), value=len(comp_table), key="top_n_comp")
+    comp_table_display = comp_table.head(top_n)
+
+    styled = (
+        comp_table_display.style
+        .highlight_min(subset=[f'{metric_to_plot}'], color='lightgreen')
+        .highlight_max(subset=['Δ vs peor (%)'], color='lightgreen')  # el peor (más alto) queda rosado
+        .bar(subset=['Score (0-100)'], vmin=0, vmax=100)
+        .format({
+            f'{metric_to_plot}': '{:,.2f}',
+            'Score (0-100)': '{:.2f}',
+            'Δ vs mejor (%)': '{:+.2f}%',
+            'Δ vs peor (%)': '{:+.2f}%'
+        })
+    )
+
+    st.dataframe(styled, use_container_width=True)
+
+
+    st.subheader("📈 Gráficos (según métrica seleccionada)")
     # Create bar chart for selected metric
     fig = go.Figure()
     
